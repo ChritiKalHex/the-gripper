@@ -1,0 +1,106 @@
+(kicad_sch
+	(version 20260306)
+	(generator "eeschema")
+	(generator_version "10.0")
+	(uuid "c58ca1b8-1581-4cf6-8e91-a9092dba9946")
+	(paper "A4")
+	(lib_symbols)
+	(sheet
+		(at 177.8 19.05)
+		(size 104.14 139.7)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "ab095893-27e3-4d6b-8bac-31193e615a4e")
+		(property "Sheetname" "Robotic_Glove"
+			(at 177.8 18.3384 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "glove_controller.kicad_sch"
+			(at 177.8 159.3346 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "Gripper_system_diagram"
+				(path "/c58ca1b8-1581-4cf6-8e91-a9092dba9946"
+					(page "3")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 19.05 19.05)
+		(size 151.13 175.26)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "af90aad1-6773-4231-84b5-5b96ea168cc9")
+		(property "Sheetname" "Robotic_Arm"
+			(at 19.05 18.3384 0)
+			(show_name yes)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "robotic_arm.kicad_sch"
+			(at 19.05 194.8946 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "Gripper_system_diagram"
+				(path "/c58ca1b8-1581-4cf6-8e91-a9092dba9946"
+					(page "2")
+				)
+			)
+		)
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
+)

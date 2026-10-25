@@ -1,0 +1,1 @@
+This is were documents, images, videos, drawings, diagrams, and other miscelaneous piece of media concerning the project that isn't code, simulation, or mechanical related lives
