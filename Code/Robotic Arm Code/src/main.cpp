@@ -253,7 +253,15 @@ void loop() {
   float y = 0;
 
   // Read up to two numeric arguments.
-  sscanf(args.c_str(), "%f %f", &x, &y);
+  // sscanf i hate you
+  int secondSpace = args.indexOf(' ');
+
+  if (secondSpace >= 0) {
+    x = args.substring(0, secondSpace).toFloat();
+    y = args.substring(secondSpace + 1).toFloat();
+  } else {
+    x = args.toFloat();
+  }
 
   if (cmd == "m1") {
     moveSteps(motor1, (long)x);
