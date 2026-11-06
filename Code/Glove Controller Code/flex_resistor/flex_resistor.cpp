@@ -14,6 +14,7 @@ voltage at A0 should decrease.
 Development environment specifics:
 Arduino 1.6.7
 ******************************************************************************/
+
 const int FLEX_PIN = A0; // Pin connected to voltage divider output
 
 // Measure the voltage at 5V and the actual resistance of your
