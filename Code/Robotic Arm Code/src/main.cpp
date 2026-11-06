@@ -1,26 +1,47 @@
 #include <Arduino.h>
 #include <math.h>
+#include <arm_kinematics.h>
 #include <stdlib.h>
 #include <stdio.h>
 
-// TWO(?) UDK2120A Drivers + TWO PK266MA Stepper Motors
+// TWO UDK2120A Drivers (to update) + TWO PK266MA Stepper Motors
 // Arduino UNO R3
 
-// Motor 1: Base -> Boom 1
+// Each stepper turns the lead screw of a linear actuator that swings one
+// joint of the arm in Drawing 1:
+//   Motor 1: shoulder actuator (base -> link 1)
+//   Motor 2: elbow actuator    (link 1 -> forearm)
+
+// Motor 1: Shoulder
 const uint8_t M1_PLS   = 2;
 const uint8_t M1_DIR   = 3;
 const uint8_t M1_COFF  = 4;
 const uint8_t M1_OHEAT = 5;
 
-// Motor 2: Boom 1 -> Boom 2
+// Motor 2: Elbow
 const uint8_t M2_PLS   = 6;
 const uint8_t M2_DIR   = 7;
 const uint8_t M2_COFF  = 8;
 const uint8_t M2_OHEAT = 9;
 
-// Set to 400 for driver switch F
-// or 800 for H??? how does this work
+// Update this against the driver switch table when switching
 const long STEPS_PER_REV = 400;
+
+// TODO: actuator data and bounds
+// get the pitch ffs
+constexpr float ACT1_MM_PER_REV = 0.0f;
+constexpr float ACT1_MIN_LEN_MM = 0.0f;
+constexpr float ACT1_MAX_LEN_MM = 0.0f;
+
+constexpr float ACT2_MM_PER_REV = 0.0f;
+constexpr float ACT2_MIN_LEN_MM = 0.0f;
+constexpr float ACT2_MAX_LEN_MM = 0.0f;
+
+// DO NOT RUN THE CODE WITHOUT FILLING THE VALUES ABOVE
+// SERIOUSLY DO NOT RUN IT WILL GET UGLY
+
+const bool M1_EXTEND_HIGH = true;
+const bool M2_EXTEND_HIGH = true;
 
 float maxSpeed = 8000.0;
 float accel = 16000.0;
@@ -32,6 +53,7 @@ const unsigned int PULSE_ON_US = 10;
 const unsigned int DIR_SETUP_US = 50;
 
 // Motor Data
+arm::Geometry geo;
 
 struct Motor {
   uint8_t pls;
@@ -39,34 +61,49 @@ struct Motor {
   uint8_t coff;
   uint8_t oheat;
 
-  long position;
-  bool dirCW;
+  long position;     // steps from the reference pose; positive = actuator lengthens
+  bool dirLevel;     // level last driven on DIR
   bool enabled;
+
+  bool extendHigh;
+  float stepsPerMm;
+  float minLen;
+  float maxLen;
+  float refLen;      // pin-to-pin length at the initial (reference) pose
 };
 
 Motor motor1 = {
   M1_PLS, M1_DIR, M1_COFF, M1_OHEAT,
-  0, false, true
+  0, false, true,
+  M1_EXTEND_HIGH,
+  STEPS_PER_REV / ACT1_MM_PER_REV, ACT1_MIN_LEN_MM, ACT1_MAX_LEN_MM, 0.0
 };
 
 Motor motor2 = {
   M2_PLS, M2_DIR, M2_COFF, M2_OHEAT,
-  0, false, true
+  0, false, true,
+  M2_EXTEND_HIGH,
+  STEPS_PER_REV / ACT2_MM_PER_REV, ACT2_MIN_LEN_MM, ACT2_MAX_LEN_MM, 0.0
 };
 
 // Low-Level Control Things
 
-void pulse(Motor &m) {
-  digitalWrite(m.pls, HIGH);
+// Both pulses share one pulse width so that a coordinated move spends the
+// same time per tick as a single-axis move.
+void pulseAxes(bool p1, bool p2) {
+  if (p1) digitalWrite(motor1.pls, HIGH);
+  if (p2) digitalWrite(motor2.pls, HIGH);
   delayMicroseconds(PULSE_ON_US);
-  digitalWrite(m.pls, LOW);
+  if (p1) digitalWrite(motor1.pls, LOW);
+  if (p2) digitalWrite(motor2.pls, LOW);
 }
 
-void setDirection(Motor &m, bool cw) {
-  if (cw == m.dirCW) return;
+void setDirection(Motor &m, bool extend) {
+  bool level = extend ? m.extendHigh : !m.extendHigh;
+  if (level == m.dirLevel) return;
 
-  digitalWrite(m.dir, cw ? HIGH : LOW);
-  m.dirCW = cw;
+  digitalWrite(m.dir, level ? HIGH : LOW);
+  m.dirLevel = level;
 
   delayMicroseconds(DIR_SETUP_US);
 }
@@ -86,25 +123,65 @@ void enableMotor(Motor &m, bool on) {
                     : F("Motor free"));
 }
 
+// Position <--> actuator length
+
+float lengthAt(const Motor &m, long pos) {
+  return m.refLen + (float)pos / m.stepsPerMm;
+}
+
+long stepsForLength(const Motor &m, float len) {
+  return lround((len - m.refLen) * m.stepsPerMm);
+}
+
+// Stop a move before it starts to avoid desync
+bool withinTravel(const Motor &m, long pos, uint8_t id) {
+  float len = lengthAt(m, pos);
+  if (len >= m.minLen && len <= m.maxLen) return true;
+
+  Serial.print(F("Motor "));
+  Serial.print(id);
+  Serial.print(F(" would reach "));
+  Serial.print(len);
+  Serial.print(F(" mm; allowed "));
+  Serial.print(m.minLen);
+  Serial.print(F(" to "));
+  Serial.println(m.maxLen);
+  return false;
+}
+
 // Movement
 // Positive steps = CW; negative steps = CCW
 
-bool moveSteps(Motor &m, long steps) {
-  if (steps == 0) return true;
+bool moveAxes(long s1, long s2) {
+  if (s1 == 0 && s2 == 0) return true;
 
-  if (!m.enabled) {
-    Serial.println(F("Motor free"));
-    return false;
+  Motor *mot[2] = {&motor1, &motor2};
+  long steps[2] = {s1, s2};
+
+  for (uint8_t k = 0; k < 2; k++) {
+    if (steps[k] == 0) continue;
+
+    if (!mot[k]->enabled) {
+      Serial.println(F("Motor free"));
+      return false;
+    }
+
+    if (overheated(*mot[k])) {
+      Serial.println(F("OVERHEAT - do not move"));
+      return false;
+    }
+
+    if (!withinTravel(*mot[k], mot[k]->position + steps[k], k + 1)) {
+      return false;
+    }
   }
 
-  if (overheated(m)) {
-    Serial.println(F("OVERHEAT - do not move"));
-    return false;
-  }
+  if (s1 != 0) setDirection(motor1, s1 > 0);
+  if (s2 != 0) setDirection(motor2, s2 > 0);
 
-  setDirection(m, steps > 0);
-
-  long n = labs(steps);
+  long a1 = labs(s1);
+  long a2 = labs(s2);
+  long n = (a1 > a2) ? a1 : a2;
 
   float vmax = constrain(
     maxSpeed, START_SPEED, SPEED_LIMIT
@@ -119,8 +196,13 @@ bool moveSteps(Motor &m, long steps) {
 
   if (ramp > n / 2) ramp = n / 2;
 
+  long err1 = n / 2;
+  long err2 = n / 2;
+  long done1 = 0;
+  long done2 = 0;
+  bool aborted = false;
+
   unsigned long t = micros();
-  long done = 0;
 
   for (long i = 0; i < n; i++) {
     long fromEnd =
@@ -139,8 +221,14 @@ bool moveSteps(Motor &m, long steps) {
 
     if (v > vmax) v = vmax;
 
-    pulse(m);
-    done++;
+    err1 += a1;
+    err2 += a2;
+    bool p1 = err1 >= n;
+    bool p2 = err2 >= n;
+    if (p1) { err1 -= n; done1++; }
+    if (p2) { err2 -= n; done2++; }
+
+    pulseAxes(p1, p2);
 
     t += (unsigned long)(1000000.0 / v);
 
@@ -148,40 +236,117 @@ bool moveSteps(Motor &m, long steps) {
       // Wait for the next step interval.
     }
 
-    if ((i & 0x3F) == 0 && overheated(m)) {
+    if ((i & 0x3F) == 0 &&
+        ((a1 > 0 && overheated(motor1)) ||
+         (a2 > 0 && overheated(motor2)))) {
       Serial.println(F("OVERHEAT - aborted"));
+      aborted = true;
       break;
     }
   }
 
-  if (steps > 0) {
-    m.position += done;
-  } else {
-    m.position -= done;
-  }
+  motor1.position += (s1 > 0) ? done1 : -done1;
+  motor2.position += (s2 > 0) ? done2 : -done2;
 
   Serial.print(F("Position = "));
-  Serial.println(m.position);
+  Serial.print(motor1.position);
+  Serial.print(F(", "));
+  Serial.println(motor2.position);
 
-  return done == n;
+  return !aborted;
+}
+
+bool moveSteps(Motor &m, long steps) {
+  if (&m == &motor1) return moveAxes(steps, 0);
+  return moveAxes(0, steps);
+}
+
+// Arm-level control
+
+float shoulderDeg() {
+  return arm::toDeg(
+    geo.shoulder.angleAt(lengthAt(motor1, motor1.position)));
+}
+
+float elbowDeg() {
+  return arm::toDeg(
+    geo.elbow.angleAt(lengthAt(motor2, motor2.position)));
+}
+
+long shoulderStepsFor(float deg) {
+  return stepsForLength(
+    motor1, geo.shoulder.lengthAt(arm::toRad(deg)));
+}
+
+long elbowStepsFor(float deg) {
+  return stepsForLength(
+    motor2, geo.elbow.lengthAt(arm::toRad(deg)));
+}
+
+bool moveJoints(float shoulder, float elbow) {
+  long t1 = shoulderStepsFor(shoulder);
+  long t2 = elbowStepsFor(elbow);
+  return moveAxes(t1 - motor1.position, t2 - motor2.position);
+}
+
+bool moveTip(float reach, float height) {
+  float t1, t2;
+
+  if (!arm::anglesFromTip(geo, reach, height, t1, t2)) {
+    Serial.println(F("Unreachable: outside the arm's link lengths"));
+    return false;
+  }
+
+  return moveJoints(arm::toDeg(t1), arm::toDeg(t2));
+}
+
+void printStatus() {
+  arm::Vec tip =
+    arm::tipFromAngles(geo, arm::toRad(shoulderDeg()),
+                       arm::toRad(elbowDeg()));
+
+  Serial.print(F("Steps:    "));
+  Serial.print(motor1.position);
+  Serial.print(F(", "));
+  Serial.println(motor2.position);
+
+  Serial.print(F("Length:   "));
+  Serial.print(lengthAt(motor1, motor1.position));
+  Serial.print(F(", "));
+  Serial.print(lengthAt(motor2, motor2.position));
+  Serial.println(F(" mm"));
+
+  Serial.print(F("Angles:   "));
+  Serial.print(shoulderDeg());
+  Serial.print(F(", "));
+  Serial.print(elbowDeg());
+  Serial.println(F(" deg"));
+
+  Serial.print(F("Tip:      reach "));
+  Serial.print(tip.x);
+  Serial.print(F(", height "));
+  Serial.print(tip.y);
+  Serial.println(F(" mm"));
 }
 
 // Serial Command Help Print
 
 void printHelp() {
   Serial.println();
-  Serial.println(F("=== TWO MOTOR CONTROLLER ==="));
-  Serial.println(F("m1 <steps>    Move motor 1"));
-  Serial.println(F("m2 <steps>    Move motor 2"));
+  Serial.println(F("=== ARM CONTROLLER ==="));
+  Serial.println(F("j <sh> <el>   Joint angles, deg (0,0 = drawn pose)"));
+  Serial.println(F("g <x> <y>     Tip reach/height, mm from shoulder pivot"));
+  Serial.println(F("m1 <steps>    Move shoulder actuator"));
+  Serial.println(F("m2 <steps>    Move elbow actuator"));
   Serial.println(F("r1 <revs>     Rotate motor 1"));
   Serial.println(F("r2 <revs>     Rotate motor 2"));
-  Serial.println(F("b <s1> <s2>   Move both, sequentially"));
+  Serial.println(F("b <s1> <s2>   Move both together, in steps"));
   Serial.println(F("v <steps/s>   Set maximum speed"));
   Serial.println(F("a <steps/s2>  Set acceleration"));
   Serial.println(F("e             Enable both motors"));
-  Serial.println(F("f             Free both motors"));
-  Serial.println(F("p             Print both positions"));
-  Serial.println(F("z             Zero both positions"));
+  Serial.println(F("f             Free both (arm can drop if screws backdrive)"));
+  Serial.println(F("p             Print position, length, angles, tip"));
+  Serial.println(F("z [sh el]     Declare current pose (default: CAD pose)"));
   Serial.println(F("================================"));
   Serial.print(F("Steps/rev: "));
   Serial.println(STEPS_PER_REV);
@@ -215,12 +380,23 @@ void setup() {
   pinMode(M1_OHEAT, INPUT_PULLUP);
   pinMode(M2_OHEAT, INPUT_PULLUP);
 
+  motor1.dirLevel = false;
+  motor2.dirLevel = false;
+
+  geo = arm::buildGeometry();
+  motor1.refLen = geo.shoulder.lengthAt(0.0f);
+  motor2.refLen = geo.elbow.lengthAt(0.0f);
+
   Serial.begin(115200);
   Serial.setTimeout(100);
 
   delay(100);
 
-  Serial.println(F("Two-motor controller ready"));
+  Serial.println(F("Arm controller ready"));
+  Serial.print(F("Drawn-pose actuator lengths (mm): "));
+  Serial.print(motor1.refLen);
+  Serial.print(F(", "));
+  Serial.println(motor2.refLen);
   printHelp();
 }
 
@@ -282,10 +458,13 @@ void loop() {
     );
   }
   else if (cmd == "b") {
-    // Sequential movement for now.
-    // I don't want to do synchronized movement.
-    moveSteps(motor1, (long)x);
-    moveSteps(motor2, (long)y);
+    moveAxes((long)x, (long)y);
+  }
+  else if (cmd == "j") {
+    moveJoints(x, y);
+  }
+  else if (cmd == "g") {
+    moveTip(x, y);
   }
   else if (cmd == "v") {
     maxSpeed = constrain(
@@ -310,16 +489,18 @@ void loop() {
     enableMotor(motor2, false);
   }
   else if (cmd == "p") {
-    Serial.print(F("Motor 1 position: "));
-    Serial.println(motor1.position);
-
-    Serial.print(F("Motor 2 position: "));
-    Serial.println(motor2.position);
+    printStatus();
   }
   else if (cmd == "z") {
-    motor1.position = 0;
-    motor2.position = 0;
-    Serial.println(F("Both positions zeroed"));
+    if (args.length() == 0) {
+      x = 0;
+      y = 0;
+    }
+
+    motor1.position = shoulderStepsFor(x);
+    motor2.position = elbowStepsFor(y);
+    Serial.println(F("Pose declared"));
+    printStatus();
   }
   else {
     printHelp();
