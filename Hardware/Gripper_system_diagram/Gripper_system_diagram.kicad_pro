@@ -254,7 +254,10 @@
   },
   "libraries": {
     "pinned_footprint_libs": [],
-    "pinned_symbol_libs": []
+    "pinned_symbol_libs": [
+      "New_Library",
+      "Gripper_Library"
+    ]
   },
   "meta": {
     "filename": "Gripper_system_diagram.kicad_pro",
@@ -430,7 +433,7 @@
         "uuid": "c58ca1b8-1581-4cf6-8e91-a9092dba9946"
       }
     ],
-    "used_designators": "",
+    "used_designators": "Arduino_Nano1,FR1-2,R1",
     "variants": []
   },
   "sheets": [
