@@ -208,7 +208,6 @@ void printHelp() {
 void handleLine(char *line) {
   char *cmd = strtok(line, " ");
   if (!cmd) return;
-
   for (char *p = cmd; *p; p++) *p = tolower(*p);
 
   char *a1 = strtok(NULL, " ");
