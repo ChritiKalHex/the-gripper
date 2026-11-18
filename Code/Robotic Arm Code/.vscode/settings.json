@@ -1,4 +1,7 @@
 {
+    "C_Cpp.default.compilerPath": "/home/alf-ishmael0787/.platformio/packages/toolchain-atmelavr/bin/avr-gcc"
+}
+{
     "ROS2.distro": "jazzy",
     "python.autoComplete.extraPaths": [
         "/home/ophelia-lonzo/ros2_ws/install/simple_filter/lib/python3.12/site-packages",
