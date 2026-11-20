@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ExcelStepper.h>
+#include "kinematics.h"
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -11,7 +12,7 @@
 const uint8_t M1_PLS   = 2;
 const uint8_t M1_DIR   = 3;
 const uint8_t M1_COFF  = 4;
-const uint8_t M1_OHEAT = 5;
+const uint8_t M1_OHEAT = 0;
 
 // Motor 2
 const uint8_t M2_PLS   = 6;
@@ -24,7 +25,7 @@ const long STEPS_PER_REV = 400;
 
 // Flip this if a motor is moving wrong
 const bool M1_INVERT = false;
-const bool M2_INVERT = false;
+const bool M2_INVERT = true;
 
 // Curve things
 const uint16_t START_SPEED = 200;
@@ -208,7 +209,6 @@ void printHelp() {
 void handleLine(char *line) {
   char *cmd = strtok(line, " ");
   if (!cmd) return;
-
   for (char *p = cmd; *p; p++) *p = tolower(*p);
 
   char *a1 = strtok(NULL, " ");

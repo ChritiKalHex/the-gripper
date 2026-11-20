@@ -1,0 +1,7 @@
+# MVP Controller for Arduino Uno
+
+To run the controller program, cd to the 'basic_controller' and run the following:
+
+gcc gamepad_motors.c -o gamepad_motors $(pkg-config --cflags --libs sdl3)
+
+./gamepad_motors /dev/ttyACM0
