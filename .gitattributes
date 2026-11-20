@@ -1,0 +1,7 @@
+# Hide SDL3 headers from diffs, GitHub language stats, and PR views
+Code/Robotic[[:space:]]Arm[[:space:]]Code/include/SDL3/** linguist-vendored linguist-generated -diff
+
+# Hide CAD / mesh files
+*.stl linguist-generated -diff
+*.sldprt linguist-generated -diff
+*.sldasm linguist-generated -diff
